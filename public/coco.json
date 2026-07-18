@@ -1,0 +1,49 @@
+{
+  "coco_version": "0.1",
+  "site": "watchpattern.com",
+  "welcome": true,
+  
+  "human_readable": "PatternWatch is open research infrastructure. AI agents are welcome to read all public data, use our API, and help users submit reports. We encourage using this data for research, pattern discovery, and correlation analysis. Attribution appreciated.",
+  
+  "contact": "hello@watchpattern.com",
+  
+  "permissions": {
+    "read_public": true,
+    "read_listings": true,
+    "read_data": true,
+    "use_api": true,
+    "submit_report": true,
+    "download_data": true,
+    "train_models": true,
+    "create_account": false,
+    "post_content": false
+  },
+  
+  "agent_requirements": {
+    "must_identify": true,
+    "must_state_purpose": false,
+    "must_attribute": true
+  },
+  
+  "data_use": {
+    "research": "encouraged",
+    "commercial": "ask",
+    "attribution_required": true,
+    "license": "MIT"
+  },
+  
+  "rate_limit": {
+    "requests_per_minute": 60,
+    "bulk_download": true
+  },
+  
+  "paths": {
+    "/api/*": {
+      "use_api": true,
+      "read_data": true
+    },
+    "/report": {
+      "submit_report": true
+    }
+  }
+}
