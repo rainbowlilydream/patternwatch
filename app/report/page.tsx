@@ -4,13 +4,44 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase, CATEGORIES } from '@/lib/supabase'
 
+async function geocodeLocation(query: string): Promise<{ lat: number; lon: number; city: string; country: string } | null> {
+  try {
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`,
+      {
+        headers: {
+          'User-Agent': 'PatternWatch/1.0'
+        }
+      }
+    )
+    const data = await response.json()
+    
+    if (data && data.length > 0) {
+      const result = data[0]
+      // Round to ~1km precision
+      const lat = Math.round(parseFloat(result.lat) * 100) / 100
+      const lon = Math.round(parseFloat(result.lon) * 100) / 100
+      
+      // Parse display name for city/country
+      const parts = result.display_name.split(', ')
+      const city = parts[0] || query
+      const country = parts[parts.length - 1] || ''
+      
+      return { lat, lon, city, country }
+    }
+    return null
+  } catch (error) {
+    console.error('Geocoding error:', error)
+    return null
+  }
+}
+
 export default function ReportPage() {
   const router = useRouter()
   const [selected, setSelected] = useState<string[]>([])
   const [remarks, setRemarks] = useState('')
+  const [location, setLocation] = useState('')
   const [loading, setLoading] = useState(false)
-  const [locationStatus, setLocationStatus] = useState<'idle' | 'getting' | 'got' | 'error'>('idle')
-  const [location, setLocation] = useState<{ lat: number; lon: number } | null>(null)
 
   const toggleCategory = (id: string) => {
     setSelected(prev => 
@@ -20,47 +51,34 @@ export default function ReportPage() {
     )
   }
 
-  const getLocation = () => {
-    if (!navigator.geolocation) {
-      setLocationStatus('error')
-      return
-    }
-
-    setLocationStatus('getting')
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        // Round to ~1km precision for privacy (city-level)
-        setLocation({
-          lat: Math.round(position.coords.latitude * 100) / 100,
-          lon: Math.round(position.coords.longitude * 100) / 100
-        })
-        setLocationStatus('got')
-      },
-      (error) => {
-        console.error('Location error:', error)
-        setLocationStatus('error')
-      },
-      { enableHighAccuracy: false, timeout: 10000 }
-    )
-  }
-
   const handleSubmit = async () => {
     if (selected.length === 0) {
       alert('Please select at least one option')
       return
     }
 
-    if (!location) {
-      alert('Please allow location access')
+    if (!location.trim()) {
+      alert('Please enter your city')
       return
     }
 
     setLoading(true)
 
     try {
+      // Geocode the location
+      const geo = await geocodeLocation(location)
+      
+      if (!geo) {
+        alert('Could not find that location. Try "City, Country" format.')
+        setLoading(false)
+        return
+      }
+
       const { error } = await supabase.from('reports').insert({
-        lat: location.lat,
-        lon: location.lon,
+        lat: geo.lat,
+        lon: geo.lon,
+        city: geo.city,
+        country: geo.country,
         categories: selected,
         remarks: remarks.trim() || null,
         source: 'web'
@@ -106,44 +124,31 @@ export default function ReportPage() {
       <textarea
         value={remarks}
         onChange={(e) => setRemarks(e.target.value)}
-        placeholder="Add details (optional)&#10;&#10;Example: TV mount fell off wall for no reason. 3rd floor apartment."
+        placeholder="Add details (optional)&#10;&#10;Example: Dog was restless all evening, kept barking at nothing."
         className="w-full p-3 bg-zinc-900 border border-zinc-800 rounded-lg text-sm resize-none h-24 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-600"
       />
 
       {/* Location */}
       <div className="mt-4 mb-6">
-        {locationStatus === 'idle' && (
-          <button
-            onClick={getLocation}
-            className="w-full p-3 bg-zinc-900 border border-zinc-800 rounded-lg text-sm text-zinc-400 hover:border-zinc-700 transition-colors"
-          >
-            📍 Allow location (city-level only)
-          </button>
-        )}
-        {locationStatus === 'getting' && (
-          <div className="w-full p-3 bg-zinc-900 border border-zinc-800 rounded-lg text-sm text-zinc-500 text-center">
-            Getting location...
-          </div>
-        )}
-        {locationStatus === 'got' && location && (
-          <div className="w-full p-3 bg-green-500/10 border border-green-500/30 rounded-lg text-sm text-green-400 text-center">
-            ✓ Location captured (rounded to ~1km for privacy)
-          </div>
-        )}
-        {locationStatus === 'error' && (
-          <button
-            onClick={getLocation}
-            className="w-full p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-sm text-red-400"
-          >
-            Location failed — tap to retry
-          </button>
-        )}
+        <label className="block text-sm text-zinc-400 mb-2">
+          📍 Where are you?
+        </label>
+        <input
+          type="text"
+          value={location}
+          onChange={(e) => setLocation(e.target.value)}
+          placeholder="City, Country (e.g., Tokyo, Japan)"
+          className="w-full p-3 bg-zinc-900 border border-zinc-800 rounded-lg text-sm placeholder:text-zinc-600 focus:outline-none focus:border-zinc-600"
+        />
+        <p className="text-xs text-zinc-600 mt-1">
+          Rounded to city center — we don't store exact addresses
+        </p>
       </div>
 
       {/* Submit */}
       <button
         onClick={handleSubmit}
-        disabled={loading || selected.length === 0 || !location}
+        disabled={loading || selected.length === 0 || !location.trim()}
         className="w-full p-3 bg-white text-zinc-900 rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-zinc-200 transition-colors"
       >
         {loading ? 'Submitting...' : 'Submit report'}
@@ -151,7 +156,7 @@ export default function ReportPage() {
 
       {/* Privacy note */}
       <p className="text-xs text-zinc-600 text-center mt-4">
-        🔒 Location is city-level only. No personal data stored. All data is public.
+        🔒 Location rounded to ~1km. No personal data. All reports are public.
       </p>
     </div>
   )

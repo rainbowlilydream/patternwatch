@@ -120,7 +120,7 @@ export default async function Home() {
                   <span className="text-zinc-500">{formatTimeAgo(report.created_at)}</span>
                 </div>
                 {report.remarks && (
-                  <p className="text-sm text-zinc-400 mt-1 truncate">
+                  <p className="text-sm text-zinc-400 mt-1">
                     {report.remarks}
                   </p>
                 )}
